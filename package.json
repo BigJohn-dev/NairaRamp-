@@ -1,0 +1,57 @@
+{
+  "name": "@nairaramp/sdk-react",
+  "version": "1.0.0",
+  "description": "The easiest way to integrate NGN ↔ USDC On/Off Ramps into your Nigerian App",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && esbuild src/index.ts --bundle --outfile=dist/index.js --format=cjs --external:react --external:react-dom && esbuild src/index.ts --bundle --outfile=dist/index.esm.js --format=esm --external:react --external:react-dom",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts src/**/*.tsx",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "stellar-sdk": "^11.0.0"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "esbuild": "^0.19.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "stellar",
+    "usdc",
+    "ngn",
+    "naira",
+    "on-ramp",
+    "off-ramp",
+    "sep-24",
+    "sep-6",
+    "react",
+    "sdk",
+    "nigeria"
+  ],
+  "author": "NairaRamp Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nairaramp/sdk-react.git"
+  }
+}

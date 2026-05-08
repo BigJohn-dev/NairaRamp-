@@ -1,0 +1,233 @@
+.widget {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.widget.light {
+  background-color: #ffffff;
+  color: #333333;
+}
+
+.widget.dark {
+  background-color: #1a1a1a;
+  color: #ffffff;
+}
+
+.container {
+  padding: 24px;
+  max-width: 400px;
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 24px 0;
+  text-align: center;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.input,
+.select {
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 16px;
+  transition: border-color 0.2s;
+  font-family: inherit;
+}
+
+.widget.light .input,
+.widget.light .select {
+  background-color: #f9fafb;
+  color: #333333;
+}
+
+.widget.dark .input,
+.widget.dark .select {
+  background-color: #2a2a2a;
+  color: #ffffff;
+  border-color: #404040;
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.input:disabled,
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hint {
+  font-size: 12px;
+  opacity: 0.7;
+  margin: 4px 0 0 0;
+}
+
+.select {
+  cursor: pointer;
+}
+
+.submitButton {
+  padding: 12px 16px;
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.submitButton:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+.submitButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error {
+  padding: 12px;
+  background-color: #fee2e2;
+  color: #991b1b;
+  border-radius: 6px;
+  font-size: 14px;
+  border: 1px solid #fecaca;
+}
+
+.widget.dark .error {
+  background-color: #7f1d1d;
+  color: #fecaca;
+  border-color: #dc2626;
+}
+
+.errorContainer {
+  text-align: center;
+  padding: 24px;
+}
+
+.errorMessage {
+  font-size: 16px;
+  font-weight: 600;
+  color: #dc2626;
+  margin: 0 0 16px 0;
+}
+
+.retryButton {
+  padding: 10px 16px;
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.retryButton:hover {
+  background-color: #2563eb;
+}
+
+.success {
+  text-align: center;
+  padding: 24px;
+}
+
+.successMessage {
+  font-size: 18px;
+  font-weight: 600;
+  color: #10b981;
+  margin: 0 0 16px 0;
+}
+
+.transactionId,
+.transactionDetails {
+  font-size: 14px;
+  margin: 8px 0;
+  opacity: 0.8;
+  word-break: break-all;
+}
+
+.statusBadge {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 12px 0;
+}
+
+.resetButton {
+  margin-top: 16px;
+  padding: 10px 16px;
+  background-color: #6b7280;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.resetButton:hover {
+  background-color: #4b5563;
+}
+
+.processing {
+  text-align: center;
+  padding: 40px 24px;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(59, 130, 246, 0.1);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 16px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.processing p {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.disclaimer {
+  font-size: 12px;
+  text-align: center;
+  opacity: 0.6;
+  margin: 12px 0 0 0;
+}
