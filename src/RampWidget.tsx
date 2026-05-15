@@ -1,142 +1,136 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useNairaRamp } from './NairaRampProvider';
-import {
-  initiateSEPFlow,
-  discoverAnchors,
-  getTransactionStatus,
-  getExchangeRates,
-  Anchor,
-  Transaction,
-} from './stellar';
+import { initiateSEPFlow, getTransactionStatus, Transaction } from './stellar';
+import { useExchangeRates } from './hooks/useExchangeRates';
+import { useAnchorDiscovery } from './hooks/useAnchorDiscovery';
+import { isValidEmail, isValidStellarAddress, ngnToUsdc, formatNGN, formatUSDC } from './stellar-utils';
+import { TransactionStatusBadge } from './components/TransactionStatusBadge';
 import styles from './RampWidget.module.css';
 
 type RampType = 'deposit' | 'withdrawal';
-type WidgetStep = 'amount' | 'details' | 'anchor' | 'processing' | 'success' | 'error';
+type WidgetStep = 'form' | 'processing' | 'success' | 'error';
 
 interface RampWidgetProps {
   type: RampType;
   onSuccess?: (transaction: Transaction) => void;
   onError?: (error: Error) => void;
+  /** Pre-fill the NGN amount */
   amount?: number;
   theme?: 'light' | 'dark';
   showAnchorSelection?: boolean;
   requireWalletAddress?: boolean;
+  /** Minimum allowed amount in NGN. Default: 100 */
+  minAmount?: number;
+  /** Maximum allowed amount in NGN */
+  maxAmount?: number;
 }
 
 export const RampWidget: React.FC<RampWidgetProps> = ({
   type,
   onSuccess,
   onError,
-  amount,
+  amount: defaultAmount,
   theme = 'light',
   showAnchorSelection = true,
   requireWalletAddress = false,
+  minAmount = 100,
+  maxAmount,
 }) => {
-  const { apiKey } = useNairaRamp();
-  const [step, setStep] = useState<WidgetStep>('amount');
+  const { apiKey, onTransaction } = useNairaRamp();
+
+  const [step, setStep] = useState<WidgetStep>('form');
   const [isLoading, setIsLoading] = useState(false);
-  const [inputAmount, setInputAmount] = useState<number | undefined>(amount);
-  const [walletAddress, setWalletAddress] = useState<string>('');
-  const [email, setEmail] = useState<string>('');
-  const [anchors, setAnchors] = useState<Anchor[]>([]);
-  const [selectedAnchor, setSelectedAnchor] = useState<string>('');
-  const [exchangeRate, setExchangeRate] = useState<number>(1);
+  const [inputAmount, setInputAmount] = useState<number | undefined>(defaultAmount);
+  const [walletAddress, setWalletAddress] = useState('');
+  const [email, setEmail] = useState('');
+  const [selectedAnchor, setSelectedAnchor] = useState('');
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [statusCheckInterval, setStatusCheckInterval] = useState<ReturnType<typeof setInterval> | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Discover available anchors on mount
+  // Anchor discovery
+  const { anchors, bestDepositAnchor, isLoading: anchorsLoading } = useAnchorDiscovery();
+
+  // Auto-select best anchor when anchors load
   useEffect(() => {
-    const fetchAnchors = async () => {
-      try {
-        const availableAnchors = await discoverAnchors();
-        setAnchors(availableAnchors);
-        if (availableAnchors.length > 0) {
-          setSelectedAnchor(availableAnchors[0].domain);
-        }
-      } catch (err) {
-        console.error('Failed to fetch anchors:', err);
-      }
-    };
-
-    if (showAnchorSelection) {
-      fetchAnchors();
+    if (!selectedAnchor && anchors.length > 0) {
+      const best = type === 'deposit' ? bestDepositAnchor : anchors[0];
+      setSelectedAnchor(best?.domain || anchors[0].domain);
     }
-  }, [showAnchorSelection]);
+  }, [anchors, bestDepositAnchor, selectedAnchor, type]);
 
-  // Get exchange rates when anchor changes
-  useEffect(() => {
-    const fetchRates = async () => {
-      if (selectedAnchor && inputAmount) {
-        try {
-          const rates = await getExchangeRates(selectedAnchor);
-          setExchangeRate(type === 'deposit' ? rates.buyRate : rates.sellRate);
-        } catch (err) {
-          console.error('Failed to fetch rates:', err);
-        }
-      }
-    };
-
-    fetchRates();
-  }, [selectedAnchor, inputAmount, type]);
+  // Live exchange rate for selected anchor
+  const { rates } = useExchangeRates(selectedAnchor, { autoRefresh: true, refreshInterval: 30_000 });
+  const rate = rates ? (type === 'deposit' ? rates.buyRate : rates.sellRate) : null;
+  const conversion = rate && inputAmount && inputAmount > 0 ? ngnToUsdc(inputAmount, rate) : null;
 
   // Poll transaction status
   useEffect(() => {
-    if (transaction && (transaction.status === 'pending' || transaction.status === 'processing')) {
-      const interval = setInterval(async () => {
-        try {
-          const updated = await getTransactionStatus(apiKey, transaction.id);
-          setTransaction(updated);
-
-          if (updated.status === 'completed') {
-            setStep('success');
-            clearInterval(interval);
-            onSuccess?.(updated);
-          } else if (updated.status === 'failed') {
-            setError('Transaction failed. Please try again.');
-            setStep('error');
-            clearInterval(interval);
-          }
-        } catch (err) {
-          console.error('Failed to check transaction status:', err);
-        }
-      }, 3000); // Check every 3 seconds
-
-      setStatusCheckInterval(interval);
-      return () => clearInterval(interval);
+    if (!transaction || (transaction.status !== 'pending' && transaction.status !== 'processing')) {
+      return;
     }
-  }, [transaction, apiKey, onSuccess]);
 
-  const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+    intervalRef.current = setInterval(async () => {
+      try {
+        const updated = await getTransactionStatus(apiKey, transaction.id);
+        setTransaction(updated);
+
+        if (updated.status === 'completed') {
+          clearInterval(intervalRef.current!);
+          setStep('success');
+          onTransaction?.(updated, 'completed');
+          onSuccess?.(updated);
+        } else if (updated.status === 'failed') {
+          clearInterval(intervalRef.current!);
+          setError(updated.message || 'Transaction failed. Please try again.');
+          setStep('error');
+          onTransaction?.(updated, 'failed');
+          onError?.(new Error(updated.message || 'Transaction failed'));
+        }
+      } catch {
+        // Continue polling on transient errors
+      }
+    }, 5000);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [transaction, apiKey, onSuccess, onError, onTransaction]);
+
+  const validate = (): string | null => {
+    if (!inputAmount || inputAmount < minAmount) {
+      return `Minimum amount is ${formatNGN(minAmount)}`;
+    }
+    if (maxAmount && inputAmount > maxAmount) {
+      return `Maximum amount is ${formatNGN(maxAmount)}`;
+    }
+    if (!email || !isValidEmail(email)) {
+      return 'Please enter a valid email address';
+    }
+    if (requireWalletAddress && !walletAddress) {
+      return 'A Stellar wallet address is required';
+    }
+    if (requireWalletAddress && walletAddress && !isValidStellarAddress(walletAddress)) {
+      return 'Please enter a valid Stellar wallet address (starts with G)';
+    }
+    return null;
   };
 
-  const handleInitiate = useCallback(async () => {
-    if (!inputAmount || inputAmount <= 0) {
-      setError('Please enter a valid amount');
-      return;
-    }
-
-    if (!email || !validateEmail(email)) {
-      setError('Please enter a valid email address');
-      return;
-    }
-
-    if (requireWalletAddress && !walletAddress) {
-      setError('Wallet address is required');
+  const handleSubmit = useCallback(async () => {
+    const validationError = validate();
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     setIsLoading(true);
     setError(null);
-    setStep('processing');
 
     try {
       const result = await initiateSEPFlow({
         apiKey,
         type,
-        amount: inputAmount,
+        amount: inputAmount!,
         walletAddress: requireWalletAddress ? walletAddress : undefined,
         customerEmail: email,
         anchorDomain: selectedAnchor,
@@ -144,7 +138,7 @@ export const RampWidget: React.FC<RampWidgetProps> = ({
 
       const tx: Transaction = {
         id: result.id,
-        amount: inputAmount,
+        amount: inputAmount!,
         assetCode: 'USDC',
         status: 'pending',
         type,
@@ -154,179 +148,235 @@ export const RampWidget: React.FC<RampWidgetProps> = ({
       };
 
       setTransaction(tx);
+      setStep('processing');
+      onTransaction?.(tx, 'initiated');
 
-      // Open interactive URL if available
       if (result.interactiveUrl) {
-        window.open(result.interactiveUrl, '_blank');
+        window.open(result.interactiveUrl, '_blank', 'noopener,noreferrer');
       }
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error occurred');
-      setError(error.message);
+      const caught = err instanceof Error ? err : new Error('Unknown error occurred');
+      setError(caught.message);
       setStep('error');
-      onError?.(error);
+      onError?.(caught);
     } finally {
       setIsLoading(false);
     }
   }, [
-    inputAmount,
-    email,
-    walletAddress,
-    type,
-    apiKey,
-    selectedAnchor,
-    requireWalletAddress,
-    onError,
+    inputAmount, email, walletAddress, type, apiKey, selectedAnchor,
+    requireWalletAddress, minAmount, maxAmount, onError, onTransaction,
   ]);
 
-  const handleReset = () => {
-    if (statusCheckInterval) {
-      clearInterval(statusCheckInterval);
-    }
-    setStep('amount');
-    setInputAmount(undefined);
+  const handleReset = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setStep('form');
+    setInputAmount(defaultAmount);
     setEmail('');
     setWalletAddress('');
     setTransaction(null);
     setError(null);
-  };
+    setIsLoading(false);
+  }, [defaultAmount]);
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+
+  const widgetClass = [styles.widget, styles[theme]].join(' ');
 
   return (
-    <div className={`${styles.widget} ${styles[theme]}`}>
+    <div className={widgetClass}>
       <div className={styles.container}>
         <h2 className={styles.title}>
-          {type === 'deposit' ? '📥 Fund Your Account' : '📤 Withdraw Funds'}
+          {type === 'deposit' ? 'Deposit NGN' : 'Withdraw NGN'}
         </h2>
 
-        {step === 'success' && transaction ? (
+        {/* ── Success ── */}
+        {step === 'success' && transaction && (
           <div className={styles.success}>
-            <p className={styles.successMessage}>✓ Transaction initiated!</p>
-            <p className={styles.transactionId}>ID: {transaction.id}</p>
-            <p className={styles.transactionDetails}>
-              Amount: ₦{inputAmount?.toLocaleString()} USDC
-            </p>
-            <p className={styles.statusBadge} style={{ color: '#10b981' }}>
-              Status: {transaction.status.toUpperCase()}
-            </p>
+            <div className={styles.successIcon}>✓</div>
+            <p className={styles.successMessage}>Transaction Initiated</p>
+            <div className={styles.txDetails}>
+              <div className={styles.txRow}>
+                <span className={styles.txLabel}>Amount</span>
+                <span className={styles.txValue}>{formatNGN(transaction.amount)}</span>
+              </div>
+              {conversion && (
+                <div className={styles.txRow}>
+                  <span className={styles.txLabel}>Equivalent</span>
+                  <span className={styles.txValue}>{formatUSDC(conversion.outputAmount)}</span>
+                </div>
+              )}
+              <div className={styles.txRow}>
+                <span className={styles.txLabel}>Status</span>
+                <TransactionStatusBadge status={transaction.status} size="sm" />
+              </div>
+              <div className={styles.txRow}>
+                <span className={styles.txLabel}>ID</span>
+                <code className={styles.txId}>{transaction.id}</code>
+              </div>
+            </div>
             <button className={styles.resetButton} onClick={handleReset}>
-              Start New Transaction
+              New Transaction
             </button>
           </div>
-        ) : step === 'error' ? (
+        )}
+
+        {/* ── Error ── */}
+        {step === 'error' && (
           <div className={styles.errorContainer}>
-            <p className={styles.errorMessage}>❌ {error}</p>
+            <div className={styles.errorIcon}>✕</div>
+            <p className={styles.errorMessage}>{error}</p>
             <button className={styles.retryButton} onClick={handleReset}>
               Try Again
             </button>
           </div>
-        ) : step === 'processing' || transaction?.status === 'processing' ? (
+        )}
+
+        {/* ── Processing ── */}
+        {step === 'processing' && (
           <div className={styles.processing}>
-            <div className={styles.spinner}></div>
-            <p>Processing your transaction...</p>
+            <div className={styles.spinner} />
+            <p className={styles.processingText}>Processing your transaction...</p>
             {transaction && (
-              <p className={styles.transactionId}>ID: {transaction.id}</p>
+              <>
+                <TransactionStatusBadge status={transaction.status} />
+                <p className={styles.processingHint}>
+                  Keep this window open. Status updates automatically.
+                </p>
+                <code className={styles.txId}>{transaction.id}</code>
+              </>
             )}
           </div>
-        ) : (
+        )}
+
+        {/* ── Form ── */}
+        {step === 'form' && (
           <form
             className={styles.form}
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleInitiate();
-            }}
+            onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
+            noValidate
           >
-            {/* Amount Input */}
+            {/* Amount */}
             <div className={styles.formGroup}>
-              <label htmlFor="amount" className={styles.label}>
+              <label htmlFor="nr-amount" className={styles.label}>
                 Amount (NGN)
               </label>
-              <input
-                id="amount"
-                type="number"
-                placeholder="Enter amount"
-                value={inputAmount || ''}
-                onChange={(e) => setInputAmount(e.target.value ? parseFloat(e.target.value) : undefined)}
-                className={styles.input}
-                min="1"
-                disabled={isLoading}
-              />
-              {inputAmount && exchangeRate > 0 && (
+              <div className={styles.inputWrapper}>
+                <span className={styles.inputPrefix}>₦</span>
+                <input
+                  id="nr-amount"
+                  type="number"
+                  placeholder="0"
+                  min={minAmount}
+                  max={maxAmount}
+                  value={inputAmount ?? ''}
+                  onChange={(e) =>
+                    setInputAmount(e.target.value ? parseFloat(e.target.value) : undefined)
+                  }
+                  className={styles.input}
+                  disabled={isLoading}
+                  aria-label="Amount in NGN"
+                />
+              </div>
+              {conversion && (
                 <p className={styles.hint}>
-                  ≈ ${(inputAmount / exchangeRate).toFixed(2)} USDC
+                  ≈ {formatUSDC(conversion.outputAmount)}{' '}
+                  {rate && (
+                    <span className={styles.rateHint}>
+                      @ ₦{rate.toLocaleString()}/USDC
+                    </span>
+                  )}
                 </p>
               )}
             </div>
 
-            {/* Email Input */}
+            {/* Email */}
             <div className={styles.formGroup}>
-              <label htmlFor="email" className={styles.label}>
+              <label htmlFor="nr-email" className={styles.label}>
                 Email Address
               </label>
               <input
-                id="email"
+                id="nr-email"
                 type="email"
-                placeholder="your@email.com"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className={styles.input}
                 disabled={isLoading}
+                autoComplete="email"
               />
             </div>
 
-            {/* Wallet Address (if required) */}
+            {/* Wallet Address */}
             {requireWalletAddress && (
               <div className={styles.formGroup}>
-                <label htmlFor="wallet" className={styles.label}>
-                  Wallet Address
+                <label htmlFor="nr-wallet" className={styles.label}>
+                  Stellar Wallet Address
                 </label>
                 <input
-                  id="wallet"
+                  id="nr-wallet"
                   type="text"
                   placeholder="G..."
                   value={walletAddress}
-                  onChange={(e) => setWalletAddress(e.target.value)}
+                  onChange={(e) => setWalletAddress(e.target.value.trim())}
                   className={styles.input}
                   disabled={isLoading}
+                  spellCheck={false}
+                  autoComplete="off"
                 />
+                {walletAddress && !isValidStellarAddress(walletAddress) && (
+                  <p className={styles.fieldError}>Invalid Stellar address</p>
+                )}
               </div>
             )}
 
-            {/* Anchor Selection */}
-            {showAnchorSelection && anchors.length > 0 && (
+            {/* Anchor Selector */}
+            {showAnchorSelection && (
               <div className={styles.formGroup}>
-                <label htmlFor="anchor" className={styles.label}>
+                <label htmlFor="nr-anchor" className={styles.label}>
                   Provider
                 </label>
-                <select
-                  id="anchor"
-                  value={selectedAnchor}
-                  onChange={(e) => setSelectedAnchor(e.target.value)}
-                  className={styles.select}
-                  disabled={isLoading}
-                >
-                  {anchors.map((anchor) => (
-                    <option key={anchor.domain} value={anchor.domain}>
-                      {anchor.displayName}
-                    </option>
-                  ))}
-                </select>
+                {anchorsLoading ? (
+                  <p className={styles.hint}>Discovering providers...</p>
+                ) : (
+                  <select
+                    id="nr-anchor"
+                    value={selectedAnchor}
+                    onChange={(e) => setSelectedAnchor(e.target.value)}
+                    className={styles.select}
+                    disabled={isLoading}
+                  >
+                    {anchors.map((a) => (
+                      <option key={a.domain} value={a.domain}>
+                        {a.displayName}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             )}
 
-            {/* Error Message */}
-            {error && <div className={styles.error}>{error}</div>}
+            {/* Error banner */}
+            {error && step === 'form' && (
+              <div className={styles.error} role="alert">
+                {error}
+              </div>
+            )}
 
-            {/* Submit Button */}
+            {/* Submit */}
             <button
               type="submit"
               className={styles.submitButton}
               disabled={isLoading || !inputAmount || !email}
             >
-              {isLoading ? 'Processing...' : `${type === 'deposit' ? 'Deposit' : 'Withdraw'} NGN`}
+              {isLoading
+                ? 'Initiating...'
+                : type === 'deposit'
+                ? 'Deposit NGN'
+                : 'Withdraw NGN'}
             </button>
 
-            {/* Disclaimer */}
             <p className={styles.disclaimer}>
-              🔒 KYC verification may be required. All transactions are securely processed via Stellar Network.
+              Secured via Stellar Network · KYC may be required
             </p>
           </form>
         )}
