@@ -15,4 +15,10 @@ export default defineConfig({
     port: 3000,
     open: true,
   },
+  build: {
+    // Output to project root /dist-app so Vercel can find it without
+    // knowing that our entry point lives inside /example
+    outDir: path.resolve(__dirname, 'dist-app'),
+    emptyOutDir: true,
+  },
 });

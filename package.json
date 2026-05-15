@@ -12,6 +12,7 @@
     "build": "tsc && esbuild src/index.ts --bundle --outfile=dist/index.js --format=cjs --external:react --external:react-dom && esbuild src/index.ts --bundle --outfile=dist/index.esm.js --format=esm --external:react --external:react-dom",
     "dev": "tsc --watch",
     "playground": "vite",
+    "build:app": "vite build --config vite.config.ts",
     "test": "jest",
     "lint": "eslint src/**/*.ts src/**/*.tsx",
     "type-check": "tsc --noEmit"
